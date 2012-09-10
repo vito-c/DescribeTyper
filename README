@@ -1,6 +1,14 @@
 Just whipped this up in a few hours. It's a basic way of getting json files that describe an actionscript class a bit
 hack and probably not getting everything yet :P
 
+input file:
+change your swcfile-name.swc to swcfile-name.zip and unzip it
+swcfile-name/
+-catalog.xml
+-library.swf
+
+then run the app and select the catalog.xml to get the data
+
 output folder is 
 swcfiles/playerglobal/jsons
-or where ever you catalog.xml is a folder will be created along side it with json files
+or where ever your catalog.xml is a folder will be created along side it with json files
