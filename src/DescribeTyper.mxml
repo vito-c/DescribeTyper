@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark" 
+					   xmlns:mx="library://ns.adobe.com/flex/mx"
+					   creationComplete="onCreateComplete(event)">
+	<fx:Script>
+		<![CDATA[
+			import mx.collections.ArrayCollection;
+			import mx.events.FlexEvent;
+			import mx.events.ItemClickEvent;
+			
+			import org.as3commons.reflect.Type;
+			
+			[Bindable] protected var outData:ArrayCollection = new ArrayCollection();
+			private var rawData:Array = [];
+			private var xmlData:XMLList;
+			private var length:int, index:int;
+			private var outPath:String;
+			private var filterType:String = "all";
+			
+			protected function onCreateComplete(event:FlexEvent):void
+			{
+				all.selected = true;
+			}
+			
+			protected function filterData(item:Object):Boolean
+			{
+				var searchString:String = searchInput.text;
+				var output:Boolean = true;
+				output = (filterType == "failed")? !item.value : 
+						 (filterType == "passed")? item.value :
+						 true;
+
+				if( searchString.length < 3 ){
+					return output;
+				}
+				
+				var pat:RegExp = new RegExp( searchString ); 
+				return ( item.name.search( pat ) > -1 ) && output;
+			}
+			
+			public function loadFile():void
+			{
+				var fileToOpen:File = new File();
+				var txtFilter:FileFilter = new FileFilter("Text", "*.xml");
+				
+				try 
+				{
+					fileToOpen.browseForOpen("Open", [txtFilter]);
+					fileToOpen.addEventListener(Event.SELECT, fileSelected);
+				}
+				catch (error:Error)
+				{
+					trace("Failed:", error.message);
+				}
+			}
+			
+			
+			public function fileSelected(event:Event):void 
+			{
+				var stream:FileStream = new FileStream();
+				var file:File = event.target as File;
+				outPath = file.url.replace( file.name, "" ) + "jsons";
+				stream.open( file, FileMode.READ);
+				var fileData:String = stream.readUTFBytes(stream.bytesAvailable);
+				var xml:XML = new XML( fileData.replace(/xmlns=".*"/,"") );
+				xmlData = xml..script.children();
+				length = xmlData.length() - 1;
+				index = 0;
+				addEventListener( "ClassFileWritten", onClassFileWritten );
+				process();
+			}
+			
+			private function onClassFileWritten( event:Event ):void
+			{
+				if( index < length ){
+					index += 1;
+					callLater( process );
+				}
+				
+			}
+			
+			private function process():void{
+				try{
+					var out:String;
+					var fname:String = xmlData[index].@id;
+					fname = fname.replace(/\//g,'.');
+					fname = fname.replace(/:/g,'.');
+				} catch( err:Error ){
+					rawData.push( { "name": fname, "status":"name error", "value":false } );
+					progress.setProgress( index, length );
+				}
+				try{
+					var type:Type = Type.forName( fname );
+					if( type ){
+						out = createJSON( type );
+						var file:File = new File(outPath+"/"+fname+".json");
+						var stream:FileStream = new FileStream()
+						stream.open(file, FileMode.WRITE);
+						stream.writeUTFBytes(out);
+						stream.close();
+						rawData.push( { "name": fname, "status":"passed", "value": true } );
+						progress.setProgress( index, length );
+					} else {
+						rawData.push( { "name": fname, "status":"internal class", "value":false } );
+						progress.setProgress( index, length );
+					}
+				} catch( err:Error ){
+					rawData.push( { "name": fname, "status":"ref error", "value":false } );
+					progress.setProgress( index, length );
+				}
+				progress.addEventListener(Event.COMPLETE, onComplete );
+				dispatchEvent( new Event("ClassFileWritten") );
+				
+			}
+			
+			private function onComplete( event:Event ):void
+			{
+				outData = new ArrayCollection( rawData );
+				outData.filterFunction = filterData;
+				searchInput.enabled = true;
+			}
+			
+			private function createJSON( type:Type ):String 
+			{
+				var str:String = "{\n";
+				str += JSONprop( 'name', type );
+				str += JSONprop( 'isDynamic', type );
+				str += JSONprop( 'isFinal', type );
+				str += JSONprop( 'isStatic', type );
+				str += JSONprop( 'isInterface', type );
+				str += JSONArray( 'methods', type, ['name', 'fullName','parameters.type.name','returnType.name'] );
+				str += JSONArray( 'variables', type, ['name', 'type.name'], false );
+//				type.accessors
+//				type.constants
+//				type.constructor
+//				type.staticConstants
+//				type.staticVariables
+//				type.variables
+//				type.extendsClasses
+				str += "}";
+				return str;
+			}
+
+			private static function JSONprop( name:String, obj:Object, delimit:Boolean = true ):String 
+			{
+				var str:String = '\t"' + name + '":"' + obj[name] ;
+				str += (delimit)? '",\n':'"\n';
+				return str;
+			}
+
+			private static function JSONArray( name:String, type:Object, fields:Array, delimit:Boolean = true, tabs:String = "\t", newline:String = "\n" ):String 
+			{
+				var str:String = tabs + '"' + name + '": [';
+				var arr:Array = type[name];
+				var prop:String, value:String;
+				for (var i:int = 0; i < arr.length; i++) 
+				{
+					var obj:Object = arr[i]; 
+					str += '\n' + tabs + '\t{';
+					for (var j:int = 0; j < fields.length; j++)
+					{
+						if( fields[j].split('.').length > 1 ){
+							var stub:Array = fields[j].split('.');
+							prop = stub[0];
+							if( obj[stub[0]] is Array ){
+								str += "\n"+JSONArray( stub[0], obj, [fields[j].substring( fields[j].indexOf('.') + 1)], true, "\t\t\t", "" );
+								continue;
+							} else {
+								for (var k:int = 0; k < stub.length; k++) 
+								{
+									value = obj[stub[k]];
+									obj = obj[stub[k]];
+								}
+							}
+						} else{
+							prop = fields[j];
+							value = obj[fields[j]];
+						}
+						
+						str += '\n' + tabs + '\t\t"' + prop + '":"' + value + '"';
+						str += ( j < fields.length - 1 )? ", " : "";
+					}
+					str += '\n' + tabs + '\t}';
+					str += ( i < arr.length - 1 )? ", " : "";
+				}
+				str += (delimit)? '\n' + tabs + '],' + newline : '\n' + tabs + ']' + newline;
+				return str;
+			}
+	
+			
+			private function handleCard(event:ItemClickEvent):void
+			{
+				filterType = event.currentTarget.selectedValue;
+				outData.refresh();
+			}
+
+			protected function filterList(event:KeyboardEvent):void
+			{
+				outData.refresh();
+			}
+			
+			
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<s:RadioButtonGroup id="filterGrp" 
+							itemClick="handleCard(event);"/>
+	</fx:Declarations>
+	<s:HGroup width="100%">
+		<s:Button label="Load Catalog File" click="loadFile()"/>
+		<mx:ProgressBar id="progress" width="100%" mode="manual"/>
+	</s:HGroup>
+	<s:HGroup width="100%" horizontalAlign="center">
+		<s:HGroup>
+			<s:RadioButton group="{filterGrp}" 
+						   id="all" 
+						   value="all" 
+						   label="All"/>
+			<s:RadioButton group="{filterGrp}" 
+						   id="passed" 
+						   value="passed" 
+						   label="P"/>
+			<s:RadioButton group="{filterGrp}" 
+						   id="failed" 
+						   value="failed" 
+						   label="F"/>
+		</s:HGroup>
+		<s:Label text="Name Filter (Regex):" verticalAlign="middle" height="100%"/>
+		<s:TextInput id="searchInput" width="100%" enabled="false" keyUp="filterList(event)"/>
+	</s:HGroup>
+	<s:DataGrid dataProvider="{outData}" width="100%" height="100%">
+		<s:columns>
+			<s:ArrayList>
+				<s:GridColumn dataField="name" headerText="Name"/>
+				<s:GridColumn dataField="status" headerText="Status"/>
+			</s:ArrayList>
+		</s:columns>
+	</s:DataGrid>
+	<s:layout>
+		<s:VerticalLayout verticalAlign="middle" paddingLeft="10" paddingRight="10" paddingTop="10"/>
+	</s:layout>
+</s:WindowedApplication>
