@@ -1,3 +1,4 @@
 .DS_Store
 .settings/org.eclipse.core.resources.prefs
-bin-debug/DescribeTyper-app.xml bin-debug/DescribeTyper.swf
+bin-debug/*
+bin/*
