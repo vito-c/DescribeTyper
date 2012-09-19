@@ -11,12 +11,16 @@ package test
 			
 		}
 		
-		public function someMethodTwo( paramOne:String  ):String
+		protected function someMethodTwo( paramOne:String  ):String
 		{
 			return "hello";
 		}
 
-		public function someMethodThree( paramOne:String ):Number
+		internal function someMethod():void
+		{
+		}
+
+		private function someMethodThree( paramOne:String ):Number
 		{
 			return 100;
 		}
